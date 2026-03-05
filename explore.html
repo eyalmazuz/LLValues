@@ -1,0 +1,393 @@
+<head>
+    <link href='style.css' rel='stylesheet' type='text/css'>
+    <title>LoveLiveValues - Explore</title>
+    <link rel="icon" type="x-icon" href="icon.png">
+    <link rel="shortcut icon" type="x-icon" href="icon.png">
+    <meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="config.js"></script>
+    <style>
+        #exploreLayout {
+            display: flex;
+            gap: 16px;
+            margin: 8pt auto;
+            max-width: 90%;
+            align-items: flex-start;
+        }
+        #canvasWrapper {
+            position: relative;
+            flex: 1;
+            min-width: 0;
+        }
+        #exploreCanvas {
+            width: 100%;
+            border: 2px solid #444;
+            border-radius: 8pt;
+            cursor: crosshair;
+            display: none;
+        }
+        #resultsTableWrapper {
+            width: 300px;
+            flex-shrink: 0;
+            max-height: 600px;
+            overflow-y: auto;
+            border: 2px solid #888;
+            border-radius: 8pt;
+            background: #eee;
+            display: none;
+        }
+        #resultsTable {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: system-ui, sans-serif;
+            font-size: 11pt;
+        }
+        #resultsTable th {
+            background: #444;
+            color: #fff;
+            padding: 6px 8px;
+            text-align: left;
+            position: sticky;
+            top: 0;
+        }
+        #resultsTable td {
+            padding: 4px 8px;
+            border-bottom: 1px solid #ccc;
+        }
+        #resultsTable tr:hover {
+            background: #ddd;
+        }
+        #tooltip {
+            display: none;
+            position: absolute;
+            background: rgba(0,0,0,0.85);
+            color: #fff;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-family: system-ui, sans-serif;
+            font-size: 12pt;
+            pointer-events: none;
+            white-space: nowrap;
+            z-index: 10;
+        }
+        #zoomControls {
+            text-align: center;
+            margin: 4px 0;
+            display: none;
+        }
+        #zoomControls button {
+            font-family: system-ui, sans-serif;
+            font-size: 14pt;
+            padding: 4px 12px;
+            margin: 0 4px;
+            cursor: pointer;
+            border: 1px solid #888;
+            border-radius: 4px;
+            background: #eee;
+        }
+        #zoomControls button:hover {
+            background: #ddd;
+        }
+        @media screen and (orientation:portrait) {
+            #exploreLayout {
+                flex-direction: column;
+                max-width: 100%;
+            }
+            #resultsTableWrapper {
+                width: 100%;
+                max-height: 400px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <h1 class="title">LoveLiveValues</h1>
+    <svg id="svgHeader" style="width: 100%;" viewBox="0 0 112 19">
+        <text x="50%" y="15" class="svgHeader">LoveLiveValues</text>
+    </svg>
+    <hr>
+
+    <h1 class="title">Explore</h1>
+    <svg id="svgHeader" style="width: 100%;" viewBox="0 0 112 19">
+        <text x="50%" y="15" class="svgHeader">Explore</text>
+    </svg>
+
+    <p id="statsBar" style="text-align:center; font-size:14pt; color:#555; margin:8px auto;"></p>
+    <p id="loadingText" style="text-align:center; font-size:18pt; color:#555;">Loading community results...</p>
+    <p id="errorText" style="text-align:center; font-size:16pt; color:#e53935; display:none;"></p>
+
+    <div id="zoomControls">
+        <button onclick="zoomIn()">+</button>
+        <button onclick="zoomOut()">&minus;</button>
+        <button onclick="resetZoom()">Reset</button>
+    </div>
+
+    <div id="exploreLayout">
+        <div id="canvasWrapper">
+            <canvas id="exploreCanvas"></canvas>
+            <div id="tooltip"></div>
+        </div>
+        <div id="resultsTableWrapper">
+            <table id="resultsTable">
+                <thead><tr><th>Nickname</th><th>Deg.</th><th>Yak.</th></tr></thead>
+                <tbody id="resultsTableBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <button class="button" onclick="location.href='index.html';" style="background-color: #2196f3; margin-top:8px;">Home</button> <br>
+    <button class="button" onclick="location.href='instructions.html';" style="background-color: #4caf50; margin-top:8px;">Take the Quiz</button> <br>
+
+    <script>
+    var zoomIn, zoomOut, resetZoom;
+    (function() {
+        var canvas = document.getElementById("exploreCanvas");
+        var ctx = canvas.getContext("2d");
+        var tooltip = document.getElementById("tooltip");
+        var loadingText = document.getElementById("loadingText");
+        var errorText = document.getElementById("errorText");
+        var statsBar = document.getElementById("statsBar");
+        var zoomControls = document.getElementById("zoomControls");
+        var tableWrapper = document.getElementById("resultsTableWrapper");
+        var tableBody = document.getElementById("resultsTableBody");
+        var allDots = [];
+        var backgroundImg = null;
+
+        // Canvas dimensions
+        var CW = 1850, CH = 1500;
+        canvas.width = CW;
+        canvas.height = CH;
+
+        // Zoom/pan state
+        var scale = 1;
+        var offsetX = 0, offsetY = 0;
+        var isDragging = false;
+        var dragStartX = 0, dragStartY = 0;
+        var dragStartOffsetX = 0, dragStartOffsetY = 0;
+        var DOT_RADIUS = 12;
+
+        function toCanvasX(degenerate) {
+            var x = -degenerate;
+            return 437 + (1000 * (x + 10) / 20);
+        }
+        function toCanvasY(yakkai) {
+            return 1146 - (1000 * (yakkai + 10) / 20);
+        }
+
+        function drawAll() {
+            ctx.save();
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.fillStyle = "#EEEEEE";
+            ctx.fillRect(0, 0, CW, CH);
+            ctx.restore();
+
+            ctx.save();
+            ctx.setTransform(scale, 0, 0, scale, offsetX, offsetY);
+
+            if (backgroundImg) {
+                ctx.drawImage(backgroundImg, 0, 0);
+            }
+            for (var i = 0; i < allDots.length; i++) {
+                var d = allDots[i];
+                ctx.beginPath();
+                ctx.arc(d.cx, d.cy, DOT_RADIUS, 0, 2 * Math.PI);
+                ctx.fillStyle = "rgba(220, 40, 40, 0.7)";
+                ctx.fill();
+            }
+            ctx.restore();
+        }
+
+        function clampOffset() {
+            var minX = CW - CW * scale;
+            var minY = CH - CH * scale;
+            if (offsetX > 0) offsetX = 0;
+            if (offsetY > 0) offsetY = 0;
+            if (offsetX < minX) offsetX = minX;
+            if (offsetY < minY) offsetY = minY;
+            if (scale <= 1) { offsetX = 0; offsetY = 0; }
+        }
+
+        // Zoom functions exposed globally
+        zoomIn = function() {
+            var cx = CW / 2, cy = CH / 2;
+            var newScale = Math.min(scale * 1.3, 8);
+            offsetX = cx - (cx - offsetX) * (newScale / scale);
+            offsetY = cy - (cy - offsetY) * (newScale / scale);
+            scale = newScale;
+            clampOffset();
+            drawAll();
+        };
+        zoomOut = function() {
+            var cx = CW / 2, cy = CH / 2;
+            var newScale = Math.max(scale / 1.3, 1);
+            offsetX = cx - (cx - offsetX) * (newScale / scale);
+            offsetY = cy - (cy - offsetY) * (newScale / scale);
+            scale = newScale;
+            clampOffset();
+            drawAll();
+        };
+        resetZoom = function() {
+            scale = 1; offsetX = 0; offsetY = 0;
+            drawAll();
+        };
+
+        // Mouse wheel zoom
+        canvas.addEventListener("wheel", function(e) {
+            e.preventDefault();
+            var rect = canvas.getBoundingClientRect();
+            var mx = (e.clientX - rect.left) * (CW / rect.width);
+            var my = (e.clientY - rect.top) * (CH / rect.height);
+
+            var factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+            var newScale = Math.max(1, Math.min(scale * factor, 8));
+            offsetX = mx - (mx - offsetX) * (newScale / scale);
+            offsetY = my - (my - offsetY) * (newScale / scale);
+            scale = newScale;
+            clampOffset();
+            drawAll();
+        }, { passive: false });
+
+        // Pan with mouse drag
+        canvas.addEventListener("mousedown", function(e) {
+            if (scale <= 1) return;
+            isDragging = true;
+            dragStartX = e.clientX;
+            dragStartY = e.clientY;
+            dragStartOffsetX = offsetX;
+            dragStartOffsetY = offsetY;
+            canvas.style.cursor = "grabbing";
+        });
+        window.addEventListener("mousemove", function(e) {
+            if (!isDragging) return;
+            var rect = canvas.getBoundingClientRect();
+            var sx = CW / rect.width;
+            var sy = CH / rect.height;
+            offsetX = dragStartOffsetX + (e.clientX - dragStartX) * sx;
+            offsetY = dragStartOffsetY + (e.clientY - dragStartY) * sy;
+            clampOffset();
+            drawAll();
+        });
+        window.addEventListener("mouseup", function() {
+            if (isDragging) {
+                isDragging = false;
+                canvas.style.cursor = "crosshair";
+            }
+        });
+
+        // Hover tooltip
+        canvas.addEventListener("mousemove", function(e) {
+            if (isDragging) { tooltip.style.display = "none"; return; }
+            var rect = canvas.getBoundingClientRect();
+            var mx = ((e.clientX - rect.left) * (CW / rect.width) - offsetX) / scale;
+            var my = ((e.clientY - rect.top) * (CH / rect.height) - offsetY) / scale;
+
+            var closest = null;
+            var closestDist = Infinity;
+            var hitRadius = DOT_RADIUS + 8;
+            for (var i = 0; i < allDots.length; i++) {
+                var d = allDots[i];
+                var dx = d.cx - mx;
+                var dy = d.cy - my;
+                var dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < hitRadius && dist < closestDist) {
+                    closest = d;
+                    closestDist = dist;
+                }
+            }
+
+            if (closest) {
+                var name = closest.nickname || "Anonymous";
+                tooltip.textContent = name + " (Deg: " + closest.degenerate.toFixed(1) + ", Yak: " + closest.yakkai.toFixed(1) + ")";
+                var wrapperRect = document.getElementById("canvasWrapper").getBoundingClientRect();
+                tooltip.style.left = (e.clientX - wrapperRect.left + 12) + "px";
+                tooltip.style.top = (e.clientY - wrapperRect.top - 30) + "px";
+                tooltip.style.display = "block";
+            } else {
+                tooltip.style.display = "none";
+            }
+        });
+
+        canvas.addEventListener("mouseleave", function() {
+            tooltip.style.display = "none";
+        });
+
+        function populateTable() {
+            tableBody.innerHTML = "";
+            for (var i = 0; i < allDots.length; i++) {
+                var d = allDots[i];
+                var tr = document.createElement("tr");
+                var tdName = document.createElement("td");
+                tdName.textContent = d.nickname || "Anonymous";
+                var tdDeg = document.createElement("td");
+                tdDeg.textContent = d.degenerate.toFixed(1);
+                var tdYak = document.createElement("td");
+                tdYak.textContent = d.yakkai.toFixed(1);
+                tr.appendChild(tdName);
+                tr.appendChild(tdDeg);
+                tr.appendChild(tdYak);
+                tableBody.appendChild(tr);
+            }
+        }
+
+        function loadBackground(callback) {
+            var img = new Image();
+            img.onload = function() { backgroundImg = img; callback(); };
+            img.onerror = function() { callback(); };
+            img.src = "./compass.png";
+        }
+
+        function fetchResults() {
+            if (!SHARE_CONFIG.enabled) {
+                loadingText.textContent = "";
+                errorText.style.display = "block";
+                errorText.textContent = "Community sharing is not configured yet.";
+                return;
+            }
+
+            fetch(SHARE_CONFIG.appsScriptUrl)
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                loadingText.style.display = "none";
+                if (!data.results || data.results.length === 0) {
+                    errorText.style.display = "block";
+                    errorText.textContent = "No results shared yet. Be the first!";
+                    errorText.style.color = "#555";
+                    canvas.style.display = "block";
+                    zoomControls.style.display = "block";
+                    drawAll();
+                    return;
+                }
+
+                statsBar.textContent = data.results.length + " results shared by the community";
+
+                for (var i = 0; i < data.results.length; i++) {
+                    var r = data.results[i];
+                    allDots.push({
+                        cx: toCanvasX(r.degenerate),
+                        cy: toCanvasY(r.yakkai),
+                        degenerate: r.degenerate,
+                        yakkai: r.yakkai,
+                        nickname: r.nickname || ""
+                    });
+                }
+
+                canvas.style.display = "block";
+                zoomControls.style.display = "block";
+                tableWrapper.style.display = "block";
+                drawAll();
+                populateTable();
+            })
+            .catch(function() {
+                loadingText.style.display = "none";
+                errorText.style.display = "block";
+                errorText.textContent = "Failed to load results. Please try again later.";
+            });
+        }
+
+        loadBackground(function() {
+            fetchResults();
+        });
+    })();
+    </script>
+</body>
