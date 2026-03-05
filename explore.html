@@ -50,6 +50,15 @@
             text-align: left;
             position: sticky;
             top: 0;
+            cursor: pointer;
+            user-select: none;
+        }
+        #resultsTable th:hover {
+            background: #555;
+        }
+        #resultsTable th .sort-arrow {
+            margin-left: 4px;
+            font-size: 9pt;
         }
         #resultsTable td {
             padding: 4px 8px;
@@ -130,8 +139,9 @@
             <div id="tooltip"></div>
         </div>
         <div id="resultsTableWrapper">
+            <input type="text" id="nameSearch" placeholder="Search name..." style="width:100%;box-sizing:border-box;padding:6px 8px;border:none;border-bottom:2px solid #888;font-size:11pt;font-family:system-ui,sans-serif;outline:none;">
             <table id="resultsTable">
-                <thead><tr><th data-i18n="th_nickname">Nickname</th><th data-i18n="th_deg">Deg.</th><th data-i18n="th_yak">Yak.</th></tr></thead>
+                <thead><tr><th data-i18n="th_nickname" data-col="nickname">Nickname</th><th data-i18n="th_deg" data-col="degenerate">Deg.</th><th data-i18n="th_yak" data-col="yakkai">Yak.</th></tr></thead>
                 <tbody id="resultsTableBody"></tbody>
             </table>
         </div>
@@ -315,10 +325,40 @@
             tooltip.style.display = "none";
         });
 
+        var sortCol = null;
+        var sortAsc = true;
+        var filterText = "";
+
+        var nameSearch = document.getElementById("nameSearch");
+        nameSearch.addEventListener("input", function() {
+            filterText = nameSearch.value.toLowerCase();
+            populateTable();
+        });
+
         function populateTable() {
+            var sorted = allDots.filter(function(d) {
+                if (!filterText) return true;
+                return (d.nickname || "Anonymous").toLowerCase().indexOf(filterText) !== -1;
+            });
+            if (sortCol) {
+                sorted.sort(function(a, b) {
+                    var va, vb;
+                    if (sortCol === "nickname") {
+                        va = (a.nickname || "Anonymous").toLowerCase();
+                        vb = (b.nickname || "Anonymous").toLowerCase();
+                        if (va < vb) return sortAsc ? -1 : 1;
+                        if (va > vb) return sortAsc ? 1 : -1;
+                        return 0;
+                    } else {
+                        va = a[sortCol];
+                        vb = b[sortCol];
+                        return sortAsc ? va - vb : vb - va;
+                    }
+                });
+            }
             tableBody.innerHTML = "";
-            for (var i = 0; i < allDots.length; i++) {
-                var d = allDots[i];
+            for (var i = 0; i < sorted.length; i++) {
+                var d = sorted[i];
                 var tr = document.createElement("tr");
                 var tdName = document.createElement("td");
                 tdName.textContent = d.nickname || "Anonymous";
@@ -331,7 +371,35 @@
                 tr.appendChild(tdYak);
                 tableBody.appendChild(tr);
             }
+            updateSortArrows();
         }
+
+        function updateSortArrows() {
+            var ths = document.querySelectorAll("#resultsTable th");
+            for (var i = 0; i < ths.length; i++) {
+                var existing = ths[i].querySelector(".sort-arrow");
+                if (existing) existing.remove();
+                if (ths[i].getAttribute("data-col") === sortCol) {
+                    var arrow = document.createElement("span");
+                    arrow.className = "sort-arrow";
+                    arrow.textContent = sortAsc ? "\u25B2" : "\u25BC";
+                    ths[i].appendChild(arrow);
+                }
+            }
+        }
+
+        document.querySelectorAll("#resultsTable th").forEach(function(th) {
+            th.addEventListener("click", function() {
+                var col = th.getAttribute("data-col");
+                if (sortCol === col) {
+                    sortAsc = !sortAsc;
+                } else {
+                    sortCol = col;
+                    sortAsc = col === "nickname" ? true : false;
+                }
+                populateTable();
+            });
+        });
 
         function loadBackground(callback) {
             var img = new Image();
