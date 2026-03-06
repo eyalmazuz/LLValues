@@ -101,6 +101,7 @@
         }
         #resultsTable tr:hover {
             background: #ddd;
+            cursor: pointer;
         }
         #tooltip {
             display: none;
@@ -220,6 +221,7 @@
         var tableBody = document.getElementById("resultsTableBody");
         var allDots = [];
         var backgroundImg = null;
+        var highlightedDot = null;
 
         // Canvas dimensions
         var CW = 1850, CH = 1500;
@@ -257,9 +259,21 @@
             }
             for (var i = 0; i < allDots.length; i++) {
                 var d = allDots[i];
+                if (d === highlightedDot) continue;
                 ctx.beginPath();
                 ctx.arc(d.cx, d.cy, DOT_RADIUS, 0, 2 * Math.PI);
                 ctx.fillStyle = "rgba(220, 40, 40, 0.7)";
+                ctx.fill();
+            }
+            if (highlightedDot) {
+                ctx.beginPath();
+                ctx.arc(highlightedDot.cx, highlightedDot.cy, DOT_RADIUS + 6, 0, 2 * Math.PI);
+                ctx.lineWidth = 4;
+                ctx.strokeStyle = "rgba(0, 180, 255, 1)";
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(highlightedDot.cx, highlightedDot.cy, DOT_RADIUS, 0, 2 * Math.PI);
+                ctx.fillStyle = "rgba(0, 180, 255, 1)";
                 ctx.fill();
             }
             ctx.restore();
@@ -423,6 +437,16 @@
                 tr.appendChild(tdName);
                 tr.appendChild(tdDeg);
                 tr.appendChild(tdYak);
+                (function(dot, row) {
+                    row.addEventListener("mouseenter", function() {
+                        highlightedDot = dot;
+                        drawAll();
+                    });
+                    row.addEventListener("mouseleave", function() {
+                        highlightedDot = null;
+                        drawAll();
+                    });
+                })(d, tr);
                 tableBody.appendChild(tr);
             }
             updateSortArrows();
