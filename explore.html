@@ -45,7 +45,9 @@
             display: none;
         }
         #resultsTableWrapper {
-            width: 300px;
+            width: max-content;
+            min-width: 300px;
+            max-width: 50%;
             flex-shrink: 0;
             overflow-y: auto;
             border: 2px solid #888;
@@ -95,6 +97,7 @@
         #resultsTable td {
             padding: 4px 8px;
             border-bottom: 1px solid #ccc;
+            white-space: nowrap;
         }
         #resultsTable tr:hover {
             background: #ddd;
